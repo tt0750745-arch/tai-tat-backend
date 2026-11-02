@@ -34,7 +34,7 @@ options={
     'format':'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]',
     'merge_output_format':'mp4','max_filesize':50*1024*1024,
     'outtmpl':str(Path(directory)/'tai-tat.%(ext)s'),'restrictfilenames':True,
-    'match_filter':yt_dlp.utils.match_filter_func('!is_live & duration <= 600'),
+    'match_filter':yt_dlp.utils.match_filter_func('!is_live & duration <=? 600'),
     'progress_hooks':[size_guard],'js_runtimes':{'node':{}},
     'postprocessor_args':{'ffmpeg_i':['-protocol_whitelist','file,pipe,crypto']},
 }

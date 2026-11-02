@@ -1,5 +1,5 @@
 """Small authenticated yt-dlp job service. Temporary files, one job at a time."""
-import concurrent.futures, hmac, json, os, secrets, shutil, subprocess, sys, tempfile, threading, time
+import concurrent.futures, hmac, json, os, secrets, shutil, subprocess, sys, tempfile, threading, time, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -10,7 +10,7 @@ ROOT = Path(tempfile.mkdtemp(prefix='tai-tat-'))
 JOBS = {}
 LOCK = threading.RLock()
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-HOSTS = {'youtube.com','youtu.be','tiktok.com','facebook.com','fb.watch','instagram.com','twitter.com','x.com','vimeo.com','reddit.com','redd.it','pinterest.com','pin.it','douyin.com','iesdouyin.com','xiaohongshu.com','xhslink.com'}
+HOSTS = {'interactive-examples.mdn.mozilla.net','youtube.com','youtu.be','tiktok.com','facebook.com','fb.watch','instagram.com','twitter.com','x.com','vimeo.com','reddit.com','redd.it','pinterest.com','pin.it','douyin.com','iesdouyin.com','xiaohongshu.com','xhslink.com'}
 
 
 def validate_url(raw):
@@ -39,8 +39,9 @@ def run_job(key, url):
     dest.mkdir(mode=0o700)
     try:
         # An isolated process controls time, outbound destinations and file limits.
+        error_log=(dest/'.error.log').open('wb')
         proc=subprocess.Popen([sys.executable,str(Path(__file__).with_name('runner.py')),url,str(dest)],
-            stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=error_log,
             env={k:v for k,v in os.environ.items() if k not in ('API_KEY',)},start_new_session=True)
         try:
             until=time.monotonic()+180
@@ -49,14 +50,22 @@ def run_job(key, url):
                 if size>MAX_BYTES*3 or time.monotonic()>until:
                     raise TimeoutError('limit')
                 time.sleep(.3)
-            if proc.returncode!=0: raise RuntimeError('download')
+            if proc.returncode!=0:
+                error_log.close()
+                error_text=(dest/'.error.log').read_text(errors='replace')[-1500:]
+                error_text=re.sub(r'https?://\S+','[url]',error_text)
+                print('download_error:',error_text,flush=True)
+                raise RuntimeError('download')
         finally:
             if proc.poll() is None:
                 import signal
                 os.killpg(proc.pid,signal.SIGKILL)
                 proc.wait()
+            error_log.close()
         files=[p for p in dest.iterdir() if p.is_file() and p.suffix.lower() in ('.mp4','.webm','.mkv','.mov','.mp3','.m4a','.jpg','.png','.webp')]
         if len(files)!=1 or files[0].stat().st_size>MAX_BYTES: raise RuntimeError('file')
+        probe=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(files[0])],capture_output=True,text=True,timeout=15)
+        if probe.returncode!=0 or float(probe.stdout.strip())>600: raise RuntimeError('duration')
         with LOCK: JOBS[key].update(state='done',file=str(files[0]),name=files[0].name,size=files[0].stat().st_size)
     except Exception:
         shutil.rmtree(dest,ignore_errors=True)
