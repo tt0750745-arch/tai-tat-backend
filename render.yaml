@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: tai-tat-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: API_KEY
+        generateValue: true
+      - key: PORT
+        value: "10000"
