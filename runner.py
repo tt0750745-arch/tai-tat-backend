@@ -38,4 +38,9 @@ options={
     'progress_hooks':[size_guard],'js_runtimes':{'node':{}},
     'postprocessor_args':{'ffmpeg_i':['-protocol_whitelist','file,pipe,crypto']},
 }
-with yt_dlp.YoutubeDL(options) as downloader:downloader.download([url])
+with yt_dlp.YoutubeDL(options) as downloader:
+    try:
+        sys.exit(downloader.download([url]))
+    except yt_dlp.utils.MaxDownloadsReached:
+        # The one-file limit is reached after the first successful download.
+        pass
